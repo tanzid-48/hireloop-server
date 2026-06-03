@@ -28,16 +28,31 @@ async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
-  const db = client.db("hire_loop_db");
-  const jobsCollection = db.collection("jobs");
-
-  app.post("/jobs", async (req, res) => {
-    const job = req.body;
-    const result = await jobsCollection.insertOne(job);
-    res.send(result);
-  });
-
+    const db = client.db("hire_loop_db");
+    const jobsCollection = db.collection("jobs");
+    const companiesCollection = db.collection("companies");
+    // define API endpoints for jobs
+    app.post("/jobs", async (req, res) => {
+      const job = req.body;
+      const result = await jobsCollection.insertOne(job);
+      res.send(result);
+    });
   
+    // GET /jobs?companyId=123&status=active
+
+    app.get("/jobs", async (req, res) => {
+     const  query = {};
+     if(req.query.companyId){
+      query.companyId = req.query.companyId;
+     }
+     if(req.query.status){
+      query.status = req.query.status;
+     }
+     const cursor = jobsCollection.find(query);
+     const result = await cursor.toArray();
+      res.send(result);
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
