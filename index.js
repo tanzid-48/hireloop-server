@@ -48,6 +48,16 @@ async function run() {
       res.send(company || null);
     });
 
+    // GET /companies?userId=xxx
+   app.get("/companies", async (req, res) => {
+  const query = {};
+  if (req.query.userId) {
+    query.recruiterId = req.query.userId; 
+  }
+  const result = await companiesCollection.find(query).toArray();
+  res.send(result);
+});
+
     // GET /api/companies/:id
 
     app.get("/api/companies/:id", async (req, res) => {
