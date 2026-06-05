@@ -31,25 +31,35 @@ async function run() {
     const db = client.db("hire_loop_db");
     const jobsCollection = db.collection("jobs");
     const companiesCollection = db.collection("companies");
+
     // define API endpoints for jobs
     app.post("/jobs", async (req, res) => {
       const job = req.body;
       const result = await jobsCollection.insertOne(job);
       res.send(result);
     });
-  
+
+    // GET /api/company?recruiterId=123
+    app.get("/api/company", async (req, res) => {
+      const { recruiterId } = req.query;
+      if (!recruiterId)
+        return res.status(400).send({ message: "recruiterId required" });
+      const company = await companiesCollection.findOne({ recruiterId });
+      res.send(company || null);
+    });
+
     // GET /jobs?companyId=123&status=active
 
     app.get("/jobs", async (req, res) => {
-     const  query = {};
-     if(req.query.companyId){
-      query.companyId = req.query.companyId;
-     }
-     if(req.query.status){
-      query.status = req.query.status;
-     }
-     const cursor = jobsCollection.find(query);
-     const result = await cursor.toArray();
+      const query = {};
+      if (req.query.companyId) {
+        query.companyId = req.query.companyId;
+      }
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const cursor = jobsCollection.find(query);
+      const result = await cursor.toArray();
       res.send(result);
     });
 
