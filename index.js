@@ -48,6 +48,36 @@ async function run() {
       res.send(company || null);
     });
 
+    // GET /api/companies/:id
+
+    app.get("/api/companies/:id", async (req, res) => {
+      const { ObjectId } = require("mongodb");
+      try {
+        const company = await companiesCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+        if (!company) return res.status(404).json({ message: "Not found" });
+        res.json(company);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // PATCH /api/companies/:id
+    app.patch("/api/companies/:id", async (req, res) => {
+      const { ObjectId } = require("mongodb");
+      try {
+        const result = await companiesCollection.findOneAndUpdate(
+          { _id: new ObjectId(req.params.id) },
+          { $set: req.body },
+          { returnDocument: "after" },
+        );
+        res.json(result);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // GET /jobs?companyId=123&status=active
 
     app.get("/jobs", async (req, res) => {
