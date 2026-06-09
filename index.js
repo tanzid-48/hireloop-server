@@ -32,6 +32,7 @@ async function run() {
     const companiesCollection = db.collection("companies");
     const applicationsCollection = db.collection("applications");
     const usersCollection = authDb.collection("user");
+    const subscriptionsCollection = db.collection("subscriptions");
 
     //user
 
@@ -233,9 +234,12 @@ async function run() {
         if (!user) return res.status(404).json({ message: "User not found" });
 
         const PLANS = {
-          seeker_free: { name: "Free Tier", maxApplicationsPerMonth: 3 },
-          seeker_pro: { name: "Pro", maxApplicationsPerMonth: 30 },
-          seeker_premium: { name: "Premium", maxApplicationsPerMonth: 999 },
+          seeker_free: { id: "seeker_free", maxApplicationsPerMonth: 3 },
+          seeker_pro: { id: "seeker_pro", maxApplicationsPerMonth: 30 },
+          seeker_premium: {
+            id: "seeker_premium",
+            maxApplicationsPerMonth: 999,
+          },
         };
 
         const planKey = user.plan || "seeker_free";
@@ -276,6 +280,20 @@ async function run() {
         return res.status(500).json({ message: "Internal Server Error" });
       }
     });
+    //plan updated by user
+    app.patch("/users/:id/plan", async (req, res) => {
+      try {
+        const { plan } = req.body;
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { plan, updatedAt: new Date() } },
+        );
+        res.json({ success: true, result });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
     // GET /applications
     app.get("/applications", async (req, res) => {
       try {
@@ -285,6 +303,67 @@ async function run() {
         const result = await applicationsCollection.find(query).toArray();
         res.json(result);
       } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+    // ─── SUBSCRIPTIONS
+
+    // POST /subscriptions — payment success call
+    app.post("/subscriptions", async (req, res) => {
+      try {
+        const {
+          userId,
+          planId,
+          email,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          status,
+          currentPeriodEnd,
+        } = req.body;
+
+        // subscriptions collection
+        await subscriptionsCollection.findOneAndUpdate(
+          { userId },
+          {
+            $set: {
+              userId,
+              planId,
+              email,
+              stripeCustomerId,
+              stripeSubscriptionId,
+              stripePriceId,
+              status,
+              currentPeriodEnd: new Date(currentPeriodEnd),
+              updatedAt: new Date(),
+            },
+            $setOnInsert: { createdAt: new Date() },
+          },
+          { upsert: true },
+        );
+
+        // users collection এ plan update
+        await usersCollection.updateOne(
+          { _id: new ObjectId(userId) },
+          { $set: { plan: planId, planUpdatedAt: new Date() } },
+        );
+
+        res.json({ success: true });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // GET /subscriptions/:userId
+    app.get("/subscriptions/:userId", async (req, res) => {
+      try {
+        const subscriptionsCollection = db.collection("subscriptions");
+        const sub = await subscriptionsCollection.findOne({
+          userId: req.params.userId,
+        });
+        res.json(sub || null);
+      } catch (err) {
         res.status(500).json({ message: "Server error" });
       }
     });
