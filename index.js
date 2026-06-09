@@ -25,13 +25,56 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
+    const authDb = client.db("hireloop_auth_db");
 
     const db = client.db("hire_loop_db");
     const jobsCollection = db.collection("jobs");
     const companiesCollection = db.collection("companies");
     const applicationsCollection = db.collection("applications");
+    const usersCollection = authDb.collection("user");
 
-    // ─── JOBS ─────────────────────────────────────────────────
+    //user
+
+    app.get("/users/:id/plan", async (req, res) => {
+      try {
+        const user = await usersCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const PLANS = {
+          seeker_free: { name: "Free Tier", maxApplicationsPerMonth: 3 },
+          seeker_pro: { name: "Pro", maxApplicationsPerMonth: 30 },
+          seeker_premium: { name: "Premium", maxApplicationsPerMonth: 999 },
+        };
+
+        const planKey = user.plan || "seeker_free";
+        const plan = PLANS[planKey] || PLANS.seeker_free;
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const monthlyCount = await applicationsCollection.countDocuments({
+          userId: req.params.id,
+          createdAt: { $gte: startOfMonth },
+        });
+
+        res.json({
+          ...plan,
+          planKey,
+          monthlyCount,
+          remaining: Math.max(0, plan.maxApplicationsPerMonth - monthlyCount),
+          hasReachedLimit: monthlyCount >= plan.maxApplicationsPerMonth,
+        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // ─── JOBS
 
     // POST /jobs
     app.post("/jobs", async (req, res) => {
@@ -98,7 +141,7 @@ async function run() {
       }
     });
 
-    // ─── COMPANIES ────────────────────────────────────────────
+    // ─── COMPANIES
 
     // POST /api/companies
     app.post("/api/companies", async (req, res) => {
@@ -166,31 +209,74 @@ async function run() {
       }
     });
 
-    // ─── APPLICATIONS ─────────────────────────────────────────
-
+    // ─── APPLICATIONS
     // POST /applications
     app.post("/applications", async (req, res) => {
       try {
+        const application = req.body;
+        const { userId, jobId } = application;
+
         const existing = await applicationsCollection.findOne({
-          jobId: req.body.jobId,
-          userId: req.body.userId,
+          userId,
+          jobId,
         });
         if (existing) {
           return res
             .status(400)
             .json({ message: "Already applied for this job" });
         }
+
+        // user authDb
+        const user = await usersCollection.findOne({
+          _id: new ObjectId(userId),
+        });
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        const PLANS = {
+          seeker_free: { name: "Free Tier", maxApplicationsPerMonth: 3 },
+          seeker_pro: { name: "Pro", maxApplicationsPerMonth: 30 },
+          seeker_premium: { name: "Premium", maxApplicationsPerMonth: 999 },
+        };
+
+        const planKey = user.plan || "seeker_free";
+        const plan = PLANS[planKey] || PLANS.seeker_free;
+
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+
+        const monthlyCount = await applicationsCollection.countDocuments({
+          userId,
+          createdAt: { $gte: startOfMonth },
+        });
+
+        if (monthlyCount >= plan.maxApplicationsPerMonth) {
+          return res.status(403).json({
+            message: `Monthly limit reached. Your ${plan.name} plan allows ${plan.maxApplicationsPerMonth} applications/month.`,
+          });
+        }
+
         const result = await applicationsCollection.insertOne({
-          ...req.body,
+          ...application,
           createdAt: new Date(),
         });
-        res.status(201).send(result);
-      } catch {
-        res.status(500).json({ message: "Server error" });
+
+        return res.status(201).json({
+          success: true,
+          message: "Application submitted successfully",
+          insertedId: result.insertedId,
+        });
+      } catch (err) {
+        console.error(err);
+        if (err.code === 11000) {
+          return res
+            .status(400)
+            .json({ message: "Already applied for this job" });
+        }
+        return res.status(500).json({ message: "Internal Server Error" });
       }
     });
-
-    // GET /applications?jobId=xxx OR ?userId=xxx
+    // GET /applications
     app.get("/applications", async (req, res) => {
       try {
         const query = {};
