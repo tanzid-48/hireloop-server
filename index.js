@@ -169,16 +169,23 @@ async function run() {
         const enriched = await Promise.all(
           companies.map(async (company) => {
             try {
-              const user = await usersCollection.findOne({
-                _id: new ObjectId(company.recruiterId),
+              const companyId = company._id?.$oid || company._id?.toString();
+
+              // user email
+              let user = null;
+              try {
+                user = await usersCollection.findOne({
+                  _id: new ObjectId(company.recruiterId),
+                });
+              } catch {}
+
+              // job count
+              const jobCount = await jobsCollection.countDocuments({
+                companyId: companyId,
               });
-              return { ...company, email: user?.email || null };
-            } catch (err) {
-              console.error(
-                "Error for recruiterId:",
-                company.recruiterId,
-                err.message,
-              );
+
+              return { ...company, email: user?.email || null, jobCount };
+            } catch {
               return company;
             }
           }),
