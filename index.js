@@ -420,6 +420,18 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
+    //admin saw all payment
+    app.get("/admin/subscriptions", async (req, res) => {
+      try {
+        const subscriptionsCollection = db.collection("subscriptions");
+        const result = await subscriptionsCollection.find({}).toArray();
+        res.json(result);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
   } finally {
