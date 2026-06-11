@@ -163,8 +163,28 @@ async function run() {
         const query = {};
         if (req.query.recruiterId) query.recruiterId = req.query.recruiterId;
         if (req.query.userId) query.recruiterId = req.query.userId;
-        const result = await companiesCollection.find(query).toArray();
-        res.send(result);
+
+        const companies = await companiesCollection.find(query).toArray();
+
+        const enriched = await Promise.all(
+          companies.map(async (company) => {
+            try {
+              const user = await usersCollection.findOne({
+                _id: new ObjectId(company.recruiterId),
+              });
+              return { ...company, email: user?.email || null };
+            } catch (err) {
+              console.error(
+                "Error for recruiterId:",
+                company.recruiterId,
+                err.message,
+              );
+              return company;
+            }
+          }),
+        );
+
+        res.send(enriched);
       } catch {
         res.status(500).json({ message: "Server error" });
       }
@@ -191,6 +211,21 @@ async function run() {
         });
         if (!company) return res.status(404).json({ message: "Not found" });
         res.json(company);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // PATCH /api/companies/:id/status // "approved" or "rejected"
+    app.patch("/api/companies/:id/status", async (req, res) => {
+      try {
+        const { status } = req.body;
+        const result = await companiesCollection.findOneAndUpdate(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status, updatedAt: new Date() } },
+          { returnDocument: "after" },
+        );
+        res.json(result);
       } catch {
         res.status(500).json({ message: "Server error" });
       }
