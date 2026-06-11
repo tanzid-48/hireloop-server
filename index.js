@@ -410,6 +410,16 @@ async function run() {
       }
     });
 
+    //Admin
+    // GET /admin/users
+    app.get("/admin/users", async (req, res) => {
+      try {
+        const users = await usersCollection.find({}).toArray();
+        res.json(users);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
   } finally {
