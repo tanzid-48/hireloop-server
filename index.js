@@ -410,7 +410,7 @@ async function run() {
       }
     });
 
-    //Admin
+    // ---Admin
     // GET /admin/users
     app.get("/admin/users", async (req, res) => {
       try {
@@ -430,8 +430,44 @@ async function run() {
         res.status(500).json({ message: "Server error" });
       }
     });
+    // PATCH /admin/users/:id/role
+    app.patch("/admin/users/:id/role", async (req, res) => {
+      try {
+        const { role } = req.body;
+        await usersCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { role, updatedAt: new Date() } },
+        );
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
-    
+    // PATCH /admin/users/:id/status
+    app.patch("/admin/users/:id/status", async (req, res) => {
+      try {
+        const { status } = req.body; // "active" or "suspended"
+        await usersCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status, updatedAt: new Date() } },
+        );
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // DELETE /admin/users/:id
+    app.delete("/admin/users/:id", async (req, res) => {
+      try {
+        await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
   } finally {
