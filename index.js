@@ -33,10 +33,47 @@ async function run() {
     const applicationsCollection = db.collection("applications");
     const usersCollection = authDb.collection("user");
     const subscriptionsCollection = db.collection("subscriptions");
+    const sessionCollection = authDb.collection("session");
+
+    // ── Middleware ──
+    const verifyToken = async (req, res, next) => {
+      const authHeader = req.headers?.authorization;
+      if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
+
+      const token = authHeader.split(" ")[1];
+      if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+      const session = await sessionCollection.findOne({ token });
+      if (!session) return res.status(401).json({ message: "Unauthorized" });
+
+      const user = await usersCollection.findOne({
+        _id: new ObjectId(session.userId),
+      });
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+      req.user = user;
+      next();
+    };
+
+    const verifySeeker = (req, res, next) => {
+      if (req.user?.role !== "seeker")
+        return res.status(403).json({ message: "Forbidden" });
+      next();
+    };
+    const verifyRecruiter = (req, res, next) => {
+      if (req.user?.role !== "recruiter")
+        return res.status(403).json({ message: "Forbidden" });
+      next();
+    };
+    const verifyAdmin = (req, res, next) => {
+      if (req.user?.role !== "admin")
+        return res.status(403).json({ message: "Forbidden" });
+      next();
+    };
 
     //user
 
-    app.get("/users/:id/plan", async (req, res) => {
+    app.get("/users/:id/plan", verifyToken, async (req, res) => {
       try {
         const user = await usersCollection.findOne({
           _id: new ObjectId(req.params.id),
@@ -75,10 +112,10 @@ async function run() {
       }
     });
 
-    // ─── JOBS
+    // Jobs — recruiter only
 
     // POST /jobs
-    app.post("/jobs", async (req, res) => {
+    app.post("/jobs", verifyToken, verifyRecruiter, async (req, res) => {
       try {
         const result = await jobsCollection.insertOne({
           ...req.body,
@@ -117,7 +154,7 @@ async function run() {
     });
 
     // PATCH /jobs/:id
-    app.patch("/jobs/:id", async (req, res) => {
+    app.patch("/jobs/:id", verifyToken, verifyRecruiter, async (req, res) => {
       try {
         const result = await jobsCollection.findOneAndUpdate(
           { _id: new ObjectId(req.params.id) },
@@ -131,7 +168,7 @@ async function run() {
     });
 
     // DELETE /jobs/:id
-    app.delete("/jobs/:id", async (req, res) => {
+    app.delete("/jobs/:id", verifyToken, verifyRecruiter, async (req, res) => {
       try {
         const result = await jobsCollection.deleteOne({
           _id: new ObjectId(req.params.id),
@@ -142,20 +179,25 @@ async function run() {
       }
     });
 
-    // ─── COMPANIES
+    // Companies — recruiter only
 
     // POST /api/companies
-    app.post("/api/companies", async (req, res) => {
-      try {
-        const result = await companiesCollection.insertOne({
-          ...req.body,
-          createdAt: new Date(),
-        });
-        res.send(result);
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+    app.post(
+      "/api/companies",
+      verifyToken,
+      verifyRecruiter,
+      async (req, res) => {
+        try {
+          const result = await companiesCollection.insertOne({
+            ...req.body,
+            createdAt: new Date(),
+          });
+          res.send(result);
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
 
     // GET /companies?recruiterId=xxx OR ?userId=xxx OR all
     app.get("/companies", async (req, res) => {
@@ -223,34 +265,26 @@ async function run() {
       }
     });
 
-    // PATCH /api/companies/:id/status // "approved" or "rejected"
-    app.patch("/api/companies/:id/status", async (req, res) => {
-      try {
-        const { status } = req.body;
-        const result = await companiesCollection.findOneAndUpdate(
-          { _id: new ObjectId(req.params.id) },
-          { $set: { status, updatedAt: new Date() } },
-          { returnDocument: "after" },
-        );
-        res.json(result);
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
-
     // PATCH /api/companies/:id
-    app.patch("/api/companies/:id", async (req, res) => {
-      try {
-        const result = await companiesCollection.findOneAndUpdate(
-          { _id: new ObjectId(req.params.id) },
-          { $set: req.body },
-          { returnDocument: "after" },
-        );
-        res.json(result);
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+
+    app.patch(
+      "/api/companies/:id/status",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { status } = req.body;
+          const result = await companiesCollection.findOneAndUpdate(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { status, updatedAt: new Date() } },
+            { returnDocument: "after" },
+          );
+          res.json(result);
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
 
     // ─── APPLICATIONS
     // POST /applications
@@ -412,7 +446,7 @@ async function run() {
 
     // ---Admin
     // GET /admin/users
-    app.get("/admin/users", async (req, res) => {
+    app.get("/admin/users", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const users = await usersCollection.find({}).toArray();
         res.json(users);
@@ -421,52 +455,72 @@ async function run() {
       }
     });
     //admin saw all payment
-    app.get("/admin/subscriptions", async (req, res) => {
-      try {
-        const subscriptionsCollection = db.collection("subscriptions");
-        const result = await subscriptionsCollection.find({}).toArray();
-        res.json(result);
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+    app.get(
+      "/admin/subscriptions",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const subscriptionsCollection = db.collection("subscriptions");
+          const result = await subscriptionsCollection.find({}).toArray();
+          res.json(result);
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
     // PATCH /admin/users/:id/role
-    app.patch("/admin/users/:id/role", async (req, res) => {
-      try {
-        const { role } = req.body;
-        await usersCollection.updateOne(
-          { _id: new ObjectId(req.params.id) },
-          { $set: { role, updatedAt: new Date() } },
-        );
-        res.json({ success: true });
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+    app.patch(
+      "/admin/users/:id/role",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { role } = req.body;
+          await usersCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { role, updatedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
 
     // PATCH /admin/users/:id/status
-    app.patch("/admin/users/:id/status", async (req, res) => {
-      try {
-        const { status } = req.body; // "active" or "suspended"
-        await usersCollection.updateOne(
-          { _id: new ObjectId(req.params.id) },
-          { $set: { status, updatedAt: new Date() } },
-        );
-        res.json({ success: true });
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+    app.patch(
+      "/admin/users/:id/status",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const { status } = req.body; // "active" or "suspended"
+          await usersCollection.updateOne(
+            { _id: new ObjectId(req.params.id) },
+            { $set: { status, updatedAt: new Date() } },
+          );
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
 
     // DELETE /admin/users/:id
-    app.delete("/admin/users/:id", async (req, res) => {
-      try {
-        await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
-        res.json({ success: true });
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
+    app.delete(
+      "/admin/users/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          await usersCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+          res.json({ success: true });
+        } catch {
+          res.status(500).json({ message: "Server error" });
+        }
+      },
+    );
 
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
