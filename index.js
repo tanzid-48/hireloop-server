@@ -34,6 +34,7 @@ async function run() {
     const usersCollection = authDb.collection("user");
     const subscriptionsCollection = db.collection("subscriptions");
     const sessionCollection = authDb.collection("session");
+    const savedJobsCollection = db.collection("savedJobs");
 
     // ── Middleware ──
     const verifyToken = async (req, res, next) => {
@@ -127,7 +128,6 @@ async function run() {
       }
     });
 
-   
     // GET /jobs — supports optional server-side pagination
     app.get("/jobs", async (req, res) => {
       try {
@@ -576,6 +576,54 @@ async function run() {
         }
       },
     );
+
+    // Book mark
+    // POST /saved-jobs — save a job
+    app.post("/saved-jobs", verifyToken, async (req, res) => {
+      try {
+        const { jobId } = req.body;
+        const userId = req.user._id.toString();
+
+        const existing = await savedJobsCollection.findOne({ userId, jobId });
+        if (existing) {
+          return res.status(400).json({ message: "Already saved" });
+        }
+
+        const result = await savedJobsCollection.insertOne({
+          userId,
+          jobId,
+          createdAt: new Date(),
+        });
+
+        res.status(201).json({ success: true, insertedId: result.insertedId });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // DELETE /saved-jobs?jobId=xxx — unsave a job
+    app.delete("/saved-jobs", verifyToken, async (req, res) => {
+      try {
+        const { jobId } = req.query;
+        const userId = req.user._id.toString();
+        await savedJobsCollection.deleteOne({ userId, jobId });
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
+    // GET /saved-jobs?userId=xxx — list saved jobs of a user
+    app.get("/saved-jobs", async (req, res) => {
+      try {
+        const { userId } = req.query;
+        if (!userId) return res.json([]);
+        const result = await savedJobsCollection.find({ userId }).toArray();
+        res.json(result);
+      } catch {
+        res.status(500).json({ message: "Server error" });
+      }
+    });
 
     // await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
