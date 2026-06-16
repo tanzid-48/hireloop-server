@@ -127,19 +127,7 @@ async function run() {
       }
     });
 
-    // GET /jobs?companyId=xxx&status=xxx
-    app.get("/jobs", async (req, res) => {
-      try {
-        const query = {};
-        if (req.query.companyId) query.companyId = req.query.companyId;
-        if (req.query.status) query.status = req.query.status;
-        const result = await jobsCollection.find(query).toArray();
-        res.send(result);
-      } catch {
-        res.status(500).json({ message: "Server error" });
-      }
-    });
-
+   
     // GET /jobs — supports optional server-side pagination
     app.get("/jobs", async (req, res) => {
       try {
