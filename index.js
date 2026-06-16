@@ -140,6 +140,73 @@ async function run() {
       }
     });
 
+    // GET /jobs — supports optional server-side pagination
+    app.get("/jobs", async (req, res) => {
+      try {
+        const {
+          companyId,
+          status,
+          search,
+          category,
+          jobType,
+          sort,
+          page,
+          limit = "9",
+        } = req.query;
+
+        // ── Build query ──
+        const query = {};
+        if (companyId) query.companyId = companyId;
+        if (status) query.status = status;
+        if (category) query.category = category;
+        if (jobType) {
+          if (jobType === "Remote") query.isRemote = true;
+          else query.jobType = jobType;
+        }
+        if (search) {
+          query.$or = [
+            { title: { $regex: search, $options: "i" } },
+            { category: { $regex: search, $options: "i" } },
+            { city: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        const sortObj =
+          sort === "salary" ? { salaryMax: -1 } : { createdAt: -1 };
+
+        // ── Paginated ──
+        if (page) {
+          const pageNum = Math.max(1, parseInt(page));
+          const limitNum = Math.max(1, parseInt(limit));
+          const skip = (pageNum - 1) * limitNum;
+
+          const [jobs, total] = await Promise.all([
+            jobsCollection
+              .find(query)
+              .sort(sortObj)
+              .skip(skip)
+              .limit(limitNum)
+              .toArray(),
+            jobsCollection.countDocuments(query),
+          ]);
+
+          return res.json({
+            jobs,
+            total,
+            totalPages: Math.ceil(total / limitNum),
+            page: pageNum,
+          });
+        }
+
+        // ── All jobs (backward compat) ──
+        const result = await jobsCollection.find(query).sort(sortObj).toArray();
+        res.json(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Server error" });
+      }
+    });
+
     // GET /jobs/:id
     app.get("/jobs/:id", async (req, res) => {
       try {
